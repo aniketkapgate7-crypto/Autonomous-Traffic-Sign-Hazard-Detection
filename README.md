@@ -43,3 +43,17 @@ requirements.txt
 ### Real-Time Detection
 ![Real-Time Detection](outputs/realtime_detection.png.png)
 
+## 🚀 Version 2.0
+
+### New Features
+- YOLOv8 Object Detection
+- Real-time Person Detection
+- Real-time Vehicle Detection
+- Bounding Boxes
+- Confidence Scores
+- Webcam Support
+
+### Demo
+
+![Object Detection](outputs/object_detection_demo.png)
+
