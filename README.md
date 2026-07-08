@@ -1,25 +1,18 @@
-# Autonomous Traffic Sign & Hazard Detection System
+# 🚦 Autonomous Traffic Sign & Hazard Detection System
 
-## Overview
+A deep learning project that classifies traffic signs using a CNN model and performs real-time webcam detection with hazard warnings.
 
-This project is a deep learning-based Traffic Sign Recognition System built using TensorFlow, OpenCV, and Python.
+## 📌 Features
 
-It can:
-- Detect traffic signs
-- Predict traffic sign class
-- Display confidence score
-- Show hazard warning
-- Perform real-time webcam detection
+- Traffic sign classification
+- 43 GTSRB classes
+- CNN model using TensorFlow/Keras
+- Real-time webcam detection
+- Confidence score display
+- Hazard warning system
+- 96% test accuracy
 
-## Dataset
-
-German Traffic Sign Recognition Benchmark (GTSRB)
-
-- 43 Classes
-- 39,209 Training Images
-- 12,630 Test Images
-
-## Technologies
+## 🧠 Technologies Used
 
 - Python
 - TensorFlow
@@ -29,26 +22,13 @@ German Traffic Sign Recognition Benchmark (GTSRB)
 - Scikit-learn
 - Matplotlib
 
-## Project Structure
+## 📂 Project Structure
 
+```text
 dataset/
 models/
 outputs/
 src/
 README.md
 requirements.txt
-
-## Results
-
-Model Accuracy: 96%
-
-Real-time Detection: Working
-
-## Future Improvements
-
-- YOLO-based traffic sign detection
-- Dashcam video support
-- Voice alerts
-- Android app
-- Streamlit web application
 
