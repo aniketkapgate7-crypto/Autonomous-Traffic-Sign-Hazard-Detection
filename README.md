@@ -32,3 +32,11 @@ src/
 README.md
 requirements.txt
 
+### Training Result
+![Training Result](outputs/training_result%20(1).png)
+
+### Evaluation Result
+![Evaluation Result](outputs/evaluation_result%20(1).png)
+
+### Real-Time Detection
+![Real-Time Detection](outputs/realtime_detection.png.png)
