@@ -22,7 +22,8 @@ A deep learning project that classifies traffic signs using a CNN model and perf
 - Scikit-learn
 - Matplotlib
 
-## 📂 Project Structure
+
+## 📁 Project Structure
 
 ```text
 dataset/
@@ -31,6 +32,7 @@ outputs/
 src/
 README.md
 requirements.txt
+```
 
 ### Training Result
 ![Training Result](outputs/training_result%20(1).png)
@@ -40,3 +42,4 @@ requirements.txt
 
 ### Real-Time Detection
 ![Real-Time Detection](outputs/realtime_detection.png.png)
+
