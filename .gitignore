@@ -208,3 +208,21 @@ outputs/
 # Logs
 *.log
 logs/
+
+# Virtual Environment
+.venv/
+
+# Python cache
+__pycache__/
+
+# Dataset
+dataset/raw/
+dataset/processed/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS files
+.DS_Store
+Thumbs.db
+
