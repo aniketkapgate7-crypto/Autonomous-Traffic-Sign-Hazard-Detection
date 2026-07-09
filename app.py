@@ -1,3 +1,5 @@
-from src.driver_assistant import main 
+from detectors.driver_assistant import main 
+
 if __name__ == "__main__":
     main()
+    
