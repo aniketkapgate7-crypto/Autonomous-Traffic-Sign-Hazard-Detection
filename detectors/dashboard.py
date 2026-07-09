@@ -1,5 +1,14 @@
+import os
+import sys
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
 import cv2
 import time
+import math
 import numpy as np
 from datetime import datetime
 from ultralytics import YOLO
@@ -9,41 +18,64 @@ from detectors.distance_estimator import (
     get_nearest_object,
     get_risk_level,
 )
-
-from config import MAX_DISTANCE, DANGER_DISTANCE, WARNING_DISTANCE
+from detectors.object_tracker import ObjectTracker
+from config import MAX_DISTANCE
 
 
 model = YOLO("yolov8n.pt")
 cap = cv2.VideoCapture(0)
+tracker = ObjectTracker()
+
+PROC_W = 760
+PROC_H = 600
 
 SCREEN_W = 1280
 SCREEN_H = 720
 
-CAM_X = 20
-CAM_Y = 90
-CAM_W = 760
-CAM_H = 600
-
-VIS_X = 800
-VIS_Y = 90
-VIS_W = 460
-VIS_H = 600
-
 prev_time = time.time()
+scan_angle = 0
 
-# BGR colors
-BG = (18, 18, 18)
-PANEL = (30, 30, 30)
-PANEL_BORDER = (70, 70, 70)
-WHITE = (245, 245, 245)
-GRAY = (150, 150, 150)
-DARK_GRAY = (80, 80, 80)
-BLUE = (255, 140, 40)
-GREEN = (80, 230, 100)
-ORANGE = (0, 165, 255)
-RED = (60, 60, 255)
-ROAD = (55, 55, 55)
-LANE = (230, 230, 230)
+
+TOP_X1, TOP_Y1, TOP_X2, TOP_Y2 = 25, 20, 1255, 90
+
+CAM_X, CAM_Y = 40, 125
+CAM_W, CAM_H = 520, 300
+
+TELEM_X, TELEM_Y = 40, 445
+TELEM_W, TELEM_H = 520, 240
+
+WORLD_X, WORLD_Y = 585, 125
+WORLD_W, WORLD_H = 485, 560
+
+SIDE_X = 1090
+SIDE_W = 160
+
+RADAR_Y = 125
+RADAR_H = 205
+
+SYS_Y = 350
+SYS_H = 165
+
+ENV_Y = 535
+ENV_H = 150
+
+
+BG = (8, 14, 22)
+PANEL = (12, 22, 34)
+
+CYAN_BRIGHT = (255, 255, 120)
+CYAN_DIM = (130, 120, 40)
+
+GREEN = (90, 255, 120)
+YELLOW = (0, 230, 255)
+RED = (60, 70, 255)
+
+WHITE = (240, 245, 245)
+GRAY = (145, 155, 160)
+
+ROAD = (50, 58, 68)
+ROAD_DARK = (28, 36, 46)
+LANE = (235, 245, 245)
 
 
 def draw_text(img, text, x, y, size=0.5, color=WHITE, thickness=1):
@@ -59,32 +91,35 @@ def draw_text(img, text, x, y, size=0.5, color=WHITE, thickness=1):
     )
 
 
-def draw_panel(img, x1, y1, x2, y2, color=PANEL):
-    cv2.rectangle(img, (x1, y1), (x2, y2), color, -1)
-    cv2.rectangle(img, (x1, y1), (x2, y2), PANEL_BORDER, 1)
+def draw_glow_text(img, text, x, y, size=0.6, color=CYAN_BRIGHT, thickness=1):
+    cv2.putText(
+        img,
+        text,
+        (x, y),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        size,
+        color,
+        thickness + 3,
+        cv2.LINE_AA,
+    )
+    cv2.putText(
+        img,
+        text,
+        (x, y),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        size,
+        WHITE,
+        thickness,
+        cv2.LINE_AA,
+    )
 
 
-def get_color_by_risk(risk):
-    if risk == "DANGER":
-        return RED
-    if risk == "WARNING":
-        return ORANGE
-    if risk == "SAFE":
-        return GREEN
-    return BLUE
+def draw_glow_line(img, p1, p2, color, thickness=1):
+    cv2.line(img, p1, p2, color, thickness + 3)
+    cv2.line(img, p1, p2, color, thickness)
 
 
-def get_object_color(class_name, risk):
-    if class_name == "person":
-        return RED
-
-    if class_name in ["car", "truck", "bus", "motorcycle", "bicycle"]:
-        return get_color_by_risk(risk)
-
-    return BLUE
-
-
-def draw_corner_box(img, x1, y1, x2, y2, color, thickness=2, length=22):
+def draw_corner_marks(img, x1, y1, x2, y2, color=CYAN_BRIGHT, length=20, thickness=2):
     cv2.line(img, (x1, y1), (x1 + length, y1), color, thickness)
     cv2.line(img, (x1, y1), (x1, y1 + length), color, thickness)
 
@@ -98,202 +133,374 @@ def draw_corner_box(img, x1, y1, x2, y2, color, thickness=2, length=22):
     cv2.line(img, (x2, y2), (x2, y2 - length), color, thickness)
 
 
-def draw_vehicle_icon(img, cx, cy, scale=1.0, color=WHITE):
-    body_w = int(46 * scale)
-    body_h = int(86 * scale)
+def draw_panel(img, x1, y1, x2, y2, title="", color=CYAN_BRIGHT):
+    overlay = img.copy()
+    cv2.rectangle(overlay, (x1, y1), (x2, y2), PANEL, -1)
+    cv2.addWeighted(overlay, 0.82, img, 0.18, 0, img)
 
-    x1 = cx - body_w // 2
-    y1 = cy - body_h // 2
-    x2 = cx + body_w // 2
-    y2 = cy + body_h // 2
+    cv2.rectangle(img, (x1, y1), (x2, y2), color, 1)
+    draw_corner_marks(img, x1, y1, x2, y2, color, 20, 2)
 
-    cv2.rectangle(img, (x1, y1 + 10), (x2, y2 - 10), color, 2)
-
-    cv2.rectangle(
-        img,
-        (x1 + 10, y1 + 20),
-        (x2 - 10, y1 + 42),
-        DARK_GRAY,
-        1,
-    )
-
-    cv2.rectangle(img, (x1 - 6, y1 + 20), (x1, y1 + 42), color, -1)
-    cv2.rectangle(img, (x2, y1 + 20), (x2 + 6, y1 + 42), color, -1)
-    cv2.rectangle(img, (x1 - 6, y2 - 42), (x1, y2 - 20), color, -1)
-    cv2.rectangle(img, (x2, y2 - 42), (x2 + 6, y2 - 20), color, -1)
+    if title:
+        draw_text(img, "+ " + title, x1 + 15, y1 + 28, 0.45, color, 2)
 
 
-def draw_object_icon(img, class_name, x, y, color):
+def draw_detection_box(img, x1, y1, x2, y2, color):
+    length = 28
+    thickness = 2
+
+    cv2.line(img, (x1, y1), (x1 + length, y1), color, thickness)
+    cv2.line(img, (x1, y1), (x1, y1 + length), color, thickness)
+
+    cv2.line(img, (x2, y1), (x2 - length, y1), color, thickness)
+    cv2.line(img, (x2, y1), (x2, y1 + length), color, thickness)
+
+    cv2.line(img, (x1, y2), (x1 + length, y2), color, thickness)
+    cv2.line(img, (x1, y2), (x1, y2 - length), color, thickness)
+
+    cv2.line(img, (x2, y2), (x2 - length, y2), color, thickness)
+    cv2.line(img, (x2, y2), (x2, y2 - length), color, thickness)
+
+
+def draw_background_grid(img):
+    for x in range(0, SCREEN_W, 55):
+        cv2.line(img, (x, 0), (x, SCREEN_H), (15, 35, 45), 1)
+
+    for y in range(0, SCREEN_H, 38):
+        cv2.line(img, (0, y), (SCREEN_W, y), (15, 35, 45), 1)
+
+
+def get_color_by_risk(risk):
+    if risk == "DANGER":
+        return RED
+    if risk == "WARNING":
+        return YELLOW
+    if risk == "SAFE":
+        return GREEN
+    return CYAN_BRIGHT
+
+
+def get_object_color(class_name, risk):
     if class_name == "person":
-        cv2.circle(img, (x, y - 12), 8, color, 2)
-        cv2.line(img, (x, y - 3), (x, y + 25), color, 2)
-        cv2.line(img, (x, y + 8), (x - 12, y + 18), color, 2)
-        cv2.line(img, (x, y + 8), (x + 12, y + 18), color, 2)
-        cv2.line(img, (x, y + 25), (x - 10, y + 43), color, 2)
-        cv2.line(img, (x, y + 25), (x + 10, y + 43), color, 2)
-    else:
-        cv2.rectangle(img, (x - 22, y - 14), (x + 22, y + 14), color, 2)
-        cv2.rectangle(img, (x - 12, y - 26), (x + 12, y - 14), color, 2)
-        cv2.circle(img, (x - 13, y + 15), 4, color, -1)
-        cv2.circle(img, (x + 13, y + 15), 4, color, -1)
+        return RED
+
+    if class_name in ["car", "truck", "bus", "motorcycle", "bicycle"]:
+        return get_color_by_risk(risk)
+
+    return CYAN_BRIGHT
 
 
-def draw_top_bar(img, fps, nearest_obj, nearest_distance, overall_risk):
-    draw_panel(img, 20, 20, 1260, 75, (26, 26, 26))
+def draw_person_icon(img, x, y, color, scale=1.0):
+    head = int(8 * scale)
+    body = int(28 * scale)
 
-    draw_text(img, "AI DRIVER ASSISTANT", 40, 55, 0.8, WHITE, 2)
-    draw_text(img, "TESLA-STYLE ADAS PRO", 330, 55, 0.55, GRAY, 1)
+    cv2.circle(img, (x, y - body), head, color, 2)
+    cv2.line(img, (x, y - body + head), (x, y), color, 2)
 
-    draw_text(img, f"FPS: {fps:.1f}", 610, 55, 0.55, GREEN, 1)
+    cv2.line(img, (x, y - 16), (x - int(13 * scale), y - 4), color, 2)
+    cv2.line(img, (x, y - 16), (x + int(13 * scale), y - 4), color, 2)
+
+    cv2.line(img, (x, y), (x - int(11 * scale), y + int(18 * scale)), color, 2)
+    cv2.line(img, (x, y), (x + int(11 * scale), y + int(18 * scale)), color, 2)
+
+
+def draw_car_icon(img, cx, cy, scale=1.0, color=WHITE):
+    w = int(38 * scale)
+    h = int(74 * scale)
+
+    x1 = cx - w // 2
+    y1 = cy - h // 2
+    x2 = cx + w // 2
+    y2 = cy + h // 2
+
+    cv2.rectangle(img, (x1, y1 + 8), (x2, y2 - 8), color, 2)
+    cv2.rectangle(img, (x1 + 8, y1 + 20), (x2 - 8, y1 + 38), GRAY, 1)
+
+    cv2.rectangle(img, (x1 - 5, y1 + 18), (x1, y1 + 38), color, -1)
+    cv2.rectangle(img, (x2, y1 + 18), (x2 + 5, y1 + 38), color, -1)
+    cv2.rectangle(img, (x1 - 5, y2 - 36), (x1, y2 - 16), color, -1)
+    cv2.rectangle(img, (x2, y2 - 36), (x2 + 5, y2 - 16), color, -1)
+
+
+def draw_top_bar(img, fps, inference_ms, nearest_name, nearest_distance, overall_risk):
+    draw_panel(img, TOP_X1, TOP_Y1, TOP_X2, TOP_Y2, "", CYAN_BRIGHT)
+
+    draw_glow_text(img, "AI DRIVER ASSISTANT", 55, 58, 0.78, WHITE, 1)
+
+    draw_text(img, f"HUD FPS: {fps:.1f}", 505, 50, 0.38, GREEN, 1)
+    draw_text(img, f"AI INFERENCE: {inference_ms:.1f}ms", 505, 70, 0.38, CYAN_BRIGHT, 1)
 
     risk_color = get_color_by_risk(overall_risk)
-    draw_text(img, f"RISK: {overall_risk}", 735, 55, 0.6, risk_color, 2)
+    draw_panel(img, 760, 38, 905, 68, "", risk_color)
+    draw_text(img, f"ALERT: {overall_risk}", 776, 59, 0.45, risk_color, 2)
 
-    if nearest_obj is not None and nearest_distance is not None:
-        draw_text(
-            img,
-            f"NEAREST: {nearest_obj.upper()} {nearest_distance:.1f}m",
-            900,
-            55,
-            0.5,
-            ORANGE,
-            1,
-        )
+    if nearest_name is not None and nearest_distance is not None:
+        draw_text(img, f"TARGET: {nearest_name.upper()}", 935, 52, 0.38, WHITE, 1)
+        draw_text(img, f"DISTANCE: {nearest_distance:.1f}m", 935, 72, 0.38, GREEN, 1)
+    else:
+        draw_text(img, "TARGET: NONE", 935, 52, 0.38, WHITE, 1)
+        draw_text(img, "DISTANCE: --", 935, 72, 0.38, GRAY, 1)
 
     clock = datetime.now().strftime("%H:%M:%S")
-    draw_text(img, clock, 1165, 55, 0.6, WHITE, 2)
+    draw_text(img, f"TIME // {clock}", 1120, 65, 0.40, WHITE, 1)
 
 
-def draw_camera_panel(img, camera_frame):
+def draw_camera_panel(img, camera_view):
     x1 = CAM_X
     y1 = CAM_Y
     x2 = CAM_X + CAM_W
     y2 = CAM_Y + CAM_H
 
-    draw_panel(img, x1, y1, x2, y2, PANEL)
-    img[y1:y2, x1:x2] = camera_frame
+    draw_panel(img, x1, y1, x2, y2, "LIVE WEBCAM VISION", CYAN_BRIGHT)
 
-    cv2.rectangle(img, (x1, y1), (x2, y2), PANEL_BORDER, 2)
-    draw_text(img, "LIVE CAMERA + OBJECT DETECTION", x1 + 20, y1 + 35, 0.65, WHITE, 2)
+    inner_x1 = x1 + 12
+    inner_y1 = y1 + 38
+    inner_x2 = x2 - 12
+    inner_y2 = y2 - 12
 
-
-def draw_distance_scale(img, x, y):
-    draw_text(img, "DISTANCE SCALE", x, y, 0.45, GRAY, 1)
-    draw_text(img, f"DANGER < {DANGER_DISTANCE:.0f}m", x, y + 25, 0.42, RED, 1)
-    draw_text(img, f"WARNING < {WARNING_DISTANCE:.0f}m", x, y + 50, 0.42, ORANGE, 1)
-    draw_text(img, f"SAFE > {WARNING_DISTANCE:.0f}m", x, y + 75, 0.42, GREEN, 1)
+    resized = cv2.resize(camera_view, (inner_x2 - inner_x1, inner_y2 - inner_y1))
+    img[inner_y1:inner_y2, inner_x1:inner_x2] = resized
 
 
-def draw_tesla_road_view(img, detections, frame_w):
-    x1 = VIS_X
-    y1 = VIS_Y
-    x2 = VIS_X + VIS_W
-    y2 = VIS_Y + VIS_H
+def draw_tracked_objects_panel(img, detections):
+    x1 = TELEM_X
+    y1 = TELEM_Y
+    x2 = TELEM_X + TELEM_W
+    y2 = TELEM_Y + TELEM_H
 
-    draw_panel(img, x1, y1, x2, y2, (24, 24, 24))
+    draw_panel(img, x1, y1, x2, y2, "TRACKED OBJECTS", CYAN_BRIGHT)
 
-    draw_text(img, "DRIVING VISUALIZATION", x1 + 25, y1 + 35, 0.65, WHITE, 2)
+    y = y1 + 65
 
-    road_top_y = y1 + 135
-    road_bottom_y = y2 - 65
-    center_x = x1 + VIS_W // 2
+    if not detections:
+        draw_text(img, "NO OBJECTS DETECTED", x1 + 28, y, 0.42, GRAY, 1)
+        return
+
+    for det in detections[:6]:
+        name = det["name"].upper()
+        conf = det["confidence"]
+        distance = det["distance"]
+        risk = det["risk"]
+        track_id = det.get("track_id", "-")
+
+        color = get_object_color(det["name"], risk)
+
+        draw_text(
+            img,
+            f"ID:{track_id}  OBJECT:{name:<10} CONF:{conf:.2f}",
+            x1 + 28,
+            y,
+            0.36,
+            WHITE,
+            1,
+        )
+
+        if distance is not None:
+            draw_text(img, f"{distance:.1f}m", x2 - 165, y, 0.36, color, 2)
+        else:
+            draw_text(img, "UNKNOWN", x2 - 165, y, 0.36, GRAY, 1)
+
+        draw_text(img, risk, x2 - 95, y, 0.36, color, 1)
+
+        y += 28
+
+
+def map_detection_to_world(det, frame_w, center_x, road_top_y, road_bottom_y, ego_y):
+    distance = det["distance"]
+
+    if distance is None:
+        return None
+
+    x1, y1, x2, y2 = det["bbox"]
+    object_center_x = (x1 + x2) / 2
+
+    norm_x = (object_center_x / frame_w - 0.5) * 2
+    norm_x = max(-1, min(1, norm_x))
+
+    distance_ratio = min(distance / MAX_DISTANCE, 1.0)
+
+    obj_y = int((ego_y - 85) - distance_ratio * ((ego_y - 85) - (road_top_y + 55)))
+    obj_y = max(road_top_y + 55, min(ego_y - 85, obj_y))
+
+    t = (obj_y - road_top_y) / (road_bottom_y - road_top_y)
+    road_half_width = int(70 + t * 170)
+    obj_x = int(center_x + norm_x * road_half_width * 0.75)
+
+    return obj_x, obj_y
+
+
+def draw_road_model_panel(img, detections, frame_w):
+    x1 = WORLD_X
+    y1 = WORLD_Y
+    x2 = WORLD_X + WORLD_W
+    y2 = WORLD_Y + WORLD_H
+
+    draw_panel(img, x1, y1, x2, y2, "TESLA ROAD MODEL + JARVIS ANALYSIS", CYAN_BRIGHT)
+
+    center_x = x1 + WORLD_W // 2
+    road_top_y = y1 + 150
+    road_bottom_y = y2 - 80
+
+    cv2.line(img, (x1 + 35, road_top_y - 45), (x2 - 35, road_top_y - 45), (18, 50, 65), 1)
 
     road_poly = np.array(
         [
-            [center_x - 70, road_top_y],
-            [center_x + 70, road_top_y],
-            [center_x + 190, road_bottom_y],
-            [center_x - 190, road_bottom_y],
+            [center_x - 65, road_top_y],
+            [center_x + 65, road_top_y],
+            [center_x + 230, road_bottom_y],
+            [center_x - 230, road_bottom_y],
+        ],
+        dtype=np.int32,
+    )
+
+    inner_poly = np.array(
+        [
+            [center_x - 28, road_top_y],
+            [center_x + 28, road_top_y],
+            [center_x + 105, road_bottom_y],
+            [center_x - 105, road_bottom_y],
         ],
         dtype=np.int32,
     )
 
     cv2.fillPoly(img, [road_poly], ROAD)
+    cv2.fillPoly(img, [inner_poly], ROAD_DARK)
 
-    cv2.line(img, (center_x - 70, road_top_y), (center_x - 190, road_bottom_y), LANE, 3)
-    cv2.line(img, (center_x + 70, road_top_y), (center_x + 190, road_bottom_y), LANE, 3)
+    draw_glow_line(img, (center_x - 65, road_top_y), (center_x - 230, road_bottom_y), CYAN_BRIGHT, 2)
+    draw_glow_line(img, (center_x + 65, road_top_y), (center_x + 230, road_bottom_y), CYAN_BRIGHT, 2)
+
+    cv2.line(img, (center_x - 28, road_top_y), (center_x - 105, road_bottom_y), CYAN_DIM, 1)
+    cv2.line(img, (center_x + 28, road_top_y), (center_x + 105, road_bottom_y), CYAN_DIM, 1)
 
     for i in range(8):
         t1 = i / 8
         t2 = t1 + 0.055
 
-        y_start = int(road_top_y + t1 * (road_bottom_y - road_top_y))
-        y_end = int(road_top_y + t2 * (road_bottom_y - road_top_y))
+        ys = int(road_top_y + t1 * (road_bottom_y - road_top_y))
+        ye = int(road_top_y + t2 * (road_bottom_y - road_top_y))
 
-        cv2.line(img, (center_x, y_start), (center_x, y_end), (210, 210, 210), 2)
+        cv2.line(img, (center_x, ys), (center_x, ye), LANE, 3)
 
-    ego_y = road_bottom_y - 45
-    draw_vehicle_icon(img, center_x, ego_y, 1.05, WHITE)
-    draw_text(img, "MY CAR", center_x - 28, ego_y + 68, 0.42, WHITE, 1)
+    ego_y = road_bottom_y - 35
+    draw_car_icon(img, center_x, ego_y, 1.05, WHITE)
 
     for det in detections[:10]:
+        mapped = map_detection_to_world(det, frame_w, center_x, road_top_y, road_bottom_y, ego_y)
+
+        if mapped is None:
+            continue
+
+        obj_x, obj_y = mapped
+
         name = det["name"]
-        bbox = det["bbox"]
         distance = det["distance"]
         risk = det["risk"]
+        track_id = det.get("track_id", "-")
 
-        bx1, by1, bx2, by2 = bbox
-        obj_center_x = (bx1 + bx2) / 2
+        color = get_object_color(name, risk)
 
-        norm_x = (obj_center_x / frame_w - 0.5) * 2
-        norm_x = max(-1, min(1, norm_x))
+        if name == "person":
+            cv2.circle(img, (obj_x, obj_y), 34, color, 2)
+            draw_person_icon(img, obj_x, obj_y + 15, color, 0.85)
+        else:
+            cv2.circle(img, (obj_x, obj_y), 18, color, 2)
+            cv2.circle(img, (obj_x, obj_y), 6, color, -1)
+
+        if distance is not None:
+            label = f"{name.upper()}[{distance:.1f}m]"
+        else:
+            label = name.upper()
+
+        draw_text(img, label, obj_x - 42, obj_y - 38, 0.32, color, 1)
+        draw_text(img, f"ID:{track_id}", obj_x - 18, obj_y + 48, 0.28, color, 1)
+
+
+def draw_radar_panel(img, detections, frame_w, angle):
+    x1 = SIDE_X
+    y1 = RADAR_Y
+    x2 = SIDE_X + SIDE_W
+    y2 = RADAR_Y + RADAR_H
+
+    draw_panel(img, x1, y1, x2, y2, "RADAR SECTOR", CYAN_BRIGHT)
+
+    cx = x1 + SIDE_W // 2
+    cy = y1 + 105
+    radius = 58
+
+    for r in [18, 34, 50]:
+        cv2.circle(img, (cx, cy), r, CYAN_DIM, 1)
+
+    cv2.line(img, (cx - radius, cy), (cx + radius, cy), CYAN_DIM, 1)
+    cv2.line(img, (cx, cy - radius), (cx, cy + radius), CYAN_DIM, 1)
+
+    sx = int(cx + radius * math.cos(math.radians(angle)))
+    sy = int(cy + radius * math.sin(math.radians(angle)))
+    cv2.line(img, (cx, cy), (sx, sy), CYAN_BRIGHT, 2)
+
+    for det in detections[:5]:
+        distance = det["distance"]
 
         if distance is None:
             continue
 
-        distance_ratio = min(distance / MAX_DISTANCE, 1.0)
+        bx1, by1, bx2, by2 = det["bbox"]
+        object_center_x = (bx1 + bx2) / 2
 
-        obj_y = int(ego_y - (1.0 - distance_ratio) * 350)
-        obj_y = max(road_top_y + 35, min(ego_y - 95, obj_y))
+        norm_x = (object_center_x / frame_w - 0.5) * 2
+        norm_x = max(-1, min(1, norm_x))
 
-        t = (obj_y - road_top_y) / (road_bottom_y - road_top_y)
-        road_half_width = int(70 + t * 120)
+        dist_ratio = min(distance / MAX_DISTANCE, 1.0)
 
-        obj_x = int(center_x + norm_x * road_half_width * 0.82)
+        radar_x = int(cx + norm_x * radius * 0.65)
+        radar_y = int((cy + 45) - dist_ratio * 95)
 
-        color = get_object_color(name, risk)
-
-        draw_object_icon(img, name, obj_x, obj_y, color)
-
-        draw_text(img, f"{name.upper()}", obj_x - 42, obj_y - 40, 0.38, color, 1)
-        draw_text(img, f"{distance:.1f}m", obj_x - 25, obj_y - 20, 0.38, color, 1)
-
-        if risk == "DANGER":
-            cv2.circle(img, (obj_x, obj_y), 42, RED, 2)
-        elif risk == "WARNING":
-            cv2.circle(img, (obj_x, obj_y), 38, ORANGE, 1)
-
-    draw_text(img, "LANES: DETECTED", x1 + 25, y2 - 30, 0.5, GREEN, 1)
-    draw_distance_scale(img, x1 + 285, y1 + 70)
+        color = get_object_color(det["name"], det["risk"])
+        cv2.circle(img, (radar_x, radar_y), 5, color, -1)
 
 
-def draw_object_list(img, detections):
-    x = 815
-    y = 625
+def draw_sys_tracker(img):
+    x1 = SIDE_X
+    y1 = SYS_Y
+    x2 = SIDE_X + SIDE_W
+    y2 = SYS_Y + SYS_H
 
-    draw_text(img, "OBJECTS", x, y, 0.55, WHITE, 2)
+    draw_panel(img, x1, y1, x2, y2, "SYSTEM STATUS", CYAN_BRIGHT)
 
-    y += 28
+    items = [
+        ("VISION", "ONLINE"),
+        ("YOLO", "ACTIVE"),
+        ("TRACKING", "ONLINE"),
+        ("DISTANCE", "ACTIVE"),
+    ]
 
-    if not detections:
-        draw_text(img, "No objects detected", x, y, 0.45, GRAY, 1)
-        return
+    y = y1 + 55
 
-    for det in detections[:3]:
-        name = det["name"]
-        conf = det["confidence"]
-        distance = det["distance"]
-        risk = det["risk"]
+    for label, value in items:
+        draw_text(img, label, x1 + 15, y, 0.30, WHITE, 1)
+        draw_text(img, value, x2 - 70, y, 0.30, GREEN, 1)
+        y += 30
 
-        color = get_object_color(name, risk)
 
-        if distance is not None:
-            line = f"{name.upper()}  {conf:.2f}  {distance:.1f}m  {risk}"
-        else:
-            line = f"{name.upper()}  {conf:.2f}  UNKNOWN"
+def draw_environment_panel(img):
+    x1 = SIDE_X
+    y1 = ENV_Y
+    x2 = SIDE_X + SIDE_W
+    y2 = ENV_Y + ENV_H
 
-        draw_text(img, line, x, y, 0.42, color, 1)
-        y += 24
+    draw_panel(img, x1, y1, x2, y2, "ENVIRONMENT", CYAN_BRIGHT)
+
+    items = [
+        ("WEATHER", "CLEAR"),
+        ("LIGHT", "DAY"),
+        ("ROAD", "DRY"),
+    ]
+
+    y = y1 + 55
+
+    for label, value in items:
+        draw_text(img, label, x1 + 15, y, 0.32, WHITE, 1)
+        draw_text(img, value, x2 - 70, y, 0.32, GREEN, 1)
+        y += 32
 
 
 while True:
@@ -303,23 +510,34 @@ while True:
         print("Camera not found or frame not received")
         break
 
-    frame = cv2.resize(frame, (CAM_W, CAM_H))
+    frame = cv2.resize(frame, (PROC_W, PROC_H))
     frame_h, frame_w = frame.shape[:2]
 
     current_time = time.time()
     delta = current_time - prev_time
-    fps = 1 / delta if delta > 0 else 0
+
+    if delta <= 0:
+        fps = 0
+    else:
+        fps = 1 / delta
+
     prev_time = current_time
 
-    results = model(frame, verbose=False)
+    scan_angle = (scan_angle + 4) % 360
 
-    camera_view = frame.copy()
-    detections = []
+    infer_start = time.time()
+    results = model(frame, verbose=False)
+    inference_ms = (time.time() - infer_start) * 1000
+
+    raw_detections = []
 
     for box in results[0].boxes:
         class_id = int(box.cls[0])
         class_name = model.names[class_id]
         confidence = float(box.conf[0])
+
+        if confidence < 0.30:
+            continue
 
         x1, y1, x2, y2 = [int(v) for v in box.xyxy[0].tolist()]
         bbox = (x1, y1, x2, y2)
@@ -327,7 +545,7 @@ while True:
         distance = estimate_distance(class_name, bbox)
         risk = get_risk_level(distance)
 
-        detections.append(
+        raw_detections.append(
             {
                 "name": class_name,
                 "confidence": confidence,
@@ -337,16 +555,34 @@ while True:
             }
         )
 
-        color = get_object_color(class_name, risk)
+    detections = tracker.update(raw_detections)
 
-        draw_corner_box(camera_view, x1, y1, x2, y2, color, 2, 24)
+    for det in detections:
+        if "smooth_distance" in det and det["smooth_distance"] is not None:
+            det["distance"] = det["smooth_distance"]
+
+        det["risk"] = get_risk_level(det["distance"])
+
+    camera_view = frame.copy()
+
+    for det in detections:
+        name = det["name"]
+        bbox = det["bbox"]
+        distance = det["distance"]
+        risk = det["risk"]
+        track_id = det.get("track_id", "-")
+
+        x1, y1, x2, y2 = bbox
+        color = get_object_color(name, risk)
+
+        draw_detection_box(camera_view, x1, y1, x2, y2, color)
 
         if distance is not None:
-            label = f"{class_name.upper()} {confidence:.2f} | {distance:.1f}m | {risk}"
+            label = f"ID:{track_id} {name.upper()} [{distance:.1f}m]"
         else:
-            label = f"{class_name.upper()} {confidence:.2f}"
+            label = f"ID:{track_id} {name.upper()}"
 
-        draw_text(camera_view, label, x1, max(y1 - 10, 25), 0.43, color, 2)
+        draw_text(camera_view, label, x1, max(y1 - 10, 25), 0.38, color, 2)
 
     nearest_object, nearest_distance = get_nearest_object(detections)
 
@@ -360,12 +596,20 @@ while True:
     dashboard = np.zeros((SCREEN_H, SCREEN_W, 3), dtype=np.uint8)
     dashboard[:] = BG
 
-    draw_top_bar(dashboard, fps, nearest_name, nearest_distance, overall_risk)
-    draw_camera_panel(dashboard, camera_view)
-    draw_tesla_road_view(dashboard, detections, frame_w)
-    draw_object_list(dashboard, detections)
+    draw_background_grid(dashboard)
 
-    cv2.imshow("Tesla-Style ADAS Pro Dashboard", dashboard)
+    risk_color = get_color_by_risk(overall_risk)
+    cv2.rectangle(dashboard, (10, 10), (1270, 710), risk_color, 2)
+
+    draw_top_bar(dashboard, fps, inference_ms, nearest_name, nearest_distance, overall_risk)
+    draw_camera_panel(dashboard, camera_view)
+    draw_tracked_objects_panel(dashboard, detections)
+    draw_road_model_panel(dashboard, detections, frame_w)
+    draw_radar_panel(dashboard, detections, frame_w, scan_angle)
+    draw_sys_tracker(dashboard)
+    draw_environment_panel(dashboard)
+
+    cv2.imshow("AI Driver Assistant Dashboard", dashboard)
 
     key = cv2.waitKey(1) & 0xFF
 
@@ -374,6 +618,4 @@ while True:
 
 cap.release()
 cv2.destroyAllWindows()
-
-
 
