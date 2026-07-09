@@ -2,7 +2,7 @@
 
 # Camera focal length.
 # This is a starting value. Later we will calibrate it for your laptop camera.
-FOCAL_LENGTH = 500
+FOCAL_LENGTH = 443
 
 # Approximate real-world object heights in meters
 KNOWN_HEIGHTS = {

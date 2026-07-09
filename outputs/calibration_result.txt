@@ -1,0 +1,5 @@
+Distance Calibration Result
+Object: person
+Known distance: 2.0 meters
+Real height: 1.7 meters
+Recommended FOCAL_LENGTH: 443.06
