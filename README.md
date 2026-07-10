@@ -1,5 +1,12 @@
 # Autonomous Traffic Sign & Hazard Detection System
 
+![Python](https://img.shields.io/badge/Python-3.11-blue)
+![OpenCV](https://img.shields.io/badge/OpenCV-Computer%20Vision-green)
+![YOLOv8](https://img.shields.io/badge/YOLOv8-Object%20Detection-orange)
+![AI](https://img.shields.io/badge/AI-Driver%20Assistant-purple)
+![Status](https://img.shields.io/badge/Status-Active-brightgreen)
+![Portfolio](https://img.shields.io/badge/Project-Portfolio%20Ready-success)
+
 A computer vision based AI driver assistance prototype that detects road objects, estimates approximate distance, tracks objects, shows risk levels, gives voice warnings, and displays everything inside a futuristic AI Driver Assistant dashboard.
 
 > This project is built for learning, portfolio, and academic demonstration purposes only.  
@@ -27,6 +34,16 @@ This project combines object detection, distance estimation, object tracking, ri
 The system uses a webcam to detect objects such as people, cars, buses, trucks, motorcycles, bicycles, traffic lights, and stop signs. It then estimates object distance, assigns a safety risk level, tracks the object across frames, and displays the result in a Tesla-style + Jarvis-style dashboard.
 
 ---
+
+## Portfolio Highlights
+
+- Built a real-time AI driver assistance prototype using Python, OpenCV, and YOLOv8
+- Designed a custom futuristic dashboard interface using OpenCV
+- Added object detection, object tracking, distance estimation, and risk classification
+- Implemented voice warnings for danger-level detections
+- Added screenshot and video recording support for project demonstrations
+- Organized the project with clean folders, version history, and professional GitHub documentation
+
 
 ## Key Features
 
