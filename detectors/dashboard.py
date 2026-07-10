@@ -28,6 +28,10 @@ except ImportError:
         pass
 
 
+# ==============================
+# Model and camera
+# ==============================
+
 model = YOLO("yolov8n.pt")
 cap = cv2.VideoCapture(0)
 tracker = ObjectTracker()
@@ -41,6 +45,14 @@ SCREEN_H = 720
 prev_time = time.time()
 scan_angle = 0
 
+recording = False
+video_writer = None
+video_path = None
+
+
+# ==============================
+# HUD layout
+# ==============================
 
 TOP_X1, TOP_Y1, TOP_X2, TOP_Y2 = 25, 20, 1255, 90
 
@@ -66,6 +78,10 @@ ENV_Y = 535
 ENV_H = 150
 
 
+# ==============================
+# Colors - BGR
+# ==============================
+
 BG = (8, 14, 22)
 PANEL = (12, 22, 34)
 
@@ -83,6 +99,10 @@ ROAD = (50, 58, 68)
 ROAD_DARK = (28, 36, 46)
 LANE = (235, 245, 245)
 
+
+# ==============================
+# Basic drawing helpers
+# ==============================
 
 def draw_text(img, text, x, y, size=0.5, color=WHITE, thickness=1):
     cv2.putText(
@@ -177,11 +197,17 @@ def draw_background_grid(img):
         cv2.line(img, (0, y), (SCREEN_W, y), (15, 35, 45), 1)
 
 
+# ==============================
+# Risk helpers
+# ==============================
+
 def get_color_by_risk(risk):
     if risk == "DANGER":
         return RED
+
     if risk == "WARNING":
         return YELLOW
+
     if risk == "SAFE":
         return GREEN
 
@@ -197,6 +223,10 @@ def get_object_color(class_name, risk):
 
     return CYAN_BRIGHT
 
+
+# ==============================
+# Icons
+# ==============================
 
 def draw_person_icon(img, x, y, color, scale=1.0):
     head = int(8 * scale)
@@ -230,7 +260,11 @@ def draw_car_icon(img, cx, cy, scale=1.0, color=WHITE):
     cv2.rectangle(img, (x2, y2 - 36), (x2 + 5, y2 - 16), color, -1)
 
 
-def draw_top_bar(img, fps, inference_ms, nearest_name, nearest_distance, overall_risk):
+# ==============================
+# Top bar
+# ==============================
+
+def draw_top_bar(img, fps, inference_ms, nearest_name, nearest_distance, overall_risk, is_recording):
     draw_panel(img, TOP_X1, TOP_Y1, TOP_X2, TOP_Y2, "", CYAN_BRIGHT)
 
     draw_glow_text(img, "AI DRIVER ASSISTANT", 55, 58, 0.78, WHITE, 1)
@@ -253,6 +287,14 @@ def draw_top_bar(img, fps, inference_ms, nearest_name, nearest_distance, overall
     clock = datetime.now().strftime("%H:%M:%S")
     draw_text(img, f"TIME // {clock}", 1120, 65, 0.40, WHITE, 1)
 
+    if is_recording:
+        cv2.circle(img, (1210, 38), 7, RED, -1)
+        draw_text(img, "REC", 1222, 43, 0.35, RED, 2)
+
+
+# ==============================
+# Camera panel
+# ==============================
 
 def draw_camera_panel(img, camera_view):
     x1 = CAM_X
@@ -270,6 +312,10 @@ def draw_camera_panel(img, camera_view):
     resized = cv2.resize(camera_view, (inner_x2 - inner_x1, inner_y2 - inner_y1))
     img[inner_y1:inner_y2, inner_x1:inner_x2] = resized
 
+
+# ==============================
+# Tracked objects panel
+# ==============================
 
 def draw_tracked_objects_panel(img, detections):
     x1 = TELEM_X
@@ -314,6 +360,10 @@ def draw_tracked_objects_panel(img, detections):
         y += 28
 
 
+# ==============================
+# Road model
+# ==============================
+
 def map_detection_to_world(det, frame_w, center_x, road_top_y, road_bottom_y, ego_y):
     distance = det["distance"]
 
@@ -331,11 +381,10 @@ def map_detection_to_world(det, frame_w, center_x, road_top_y, road_bottom_y, eg
     obj_y = int((ego_y - 85) - distance_ratio * ((ego_y - 85) - (road_top_y + 55)))
     obj_y = max(road_top_y + 55, min(ego_y - 85, obj_y))
 
-    t = (obj_y - road_top_y) / (road_bottom_y - road_top_y)
-
     if road_bottom_y == road_top_y:
         road_half_width = 120
     else:
+        t = (obj_y - road_top_y) / (road_bottom_y - road_top_y)
         road_half_width = int(70 + t * 170)
 
     obj_x = int(center_x + norm_x * road_half_width * 0.75)
@@ -429,6 +478,10 @@ def draw_road_model_panel(img, detections, frame_w):
         draw_text(img, f"ID:{track_id}", obj_x - 18, obj_y + 48, 0.28, color, 1)
 
 
+# ==============================
+# Right panels
+# ==============================
+
 def draw_radar_panel(img, detections, frame_w, angle):
     x1 = SIDE_X
     y1 = RADAR_Y
@@ -519,6 +572,10 @@ def draw_environment_panel(img):
         y += 32
 
 
+# ==============================
+# Save screenshot and video
+# ==============================
+
 def save_dashboard_screenshot(dashboard):
     os.makedirs("outputs/screenshots", exist_ok=True)
 
@@ -528,6 +585,35 @@ def save_dashboard_screenshot(dashboard):
     cv2.imwrite(file_path, dashboard)
     print(f"Screenshot saved: {file_path}")
 
+
+def start_video_recording():
+    os.makedirs("outputs/videos", exist_ok=True)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    file_path = f"outputs/videos/dashboard_demo_{timestamp}.mp4"
+
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    writer = cv2.VideoWriter(file_path, fourcc, 20.0, (SCREEN_W, SCREEN_H))
+
+    if not writer.isOpened():
+        print("Video writer failed to start.")
+        return None, None
+
+    print(f"Video recording started: {file_path}")
+    return writer, file_path
+
+
+def stop_video_recording(writer, file_path):
+    if writer is not None:
+        writer.release()
+
+    if file_path is not None:
+        print(f"Video recording saved: {file_path}")
+
+
+# ==============================
+# Main loop
+# ==============================
 
 while True:
     ret, frame = cap.read()
@@ -633,7 +719,16 @@ while True:
     risk_color = get_color_by_risk(overall_risk)
     cv2.rectangle(dashboard, (10, 10), (1270, 710), risk_color, 2)
 
-    draw_top_bar(dashboard, fps, inference_ms, nearest_name, nearest_distance, overall_risk)
+    draw_top_bar(
+        dashboard,
+        fps,
+        inference_ms,
+        nearest_name,
+        nearest_distance,
+        overall_risk,
+        recording,
+    )
+
     draw_camera_panel(dashboard, camera_view)
     draw_tracked_objects_panel(dashboard, detections)
     draw_road_model_panel(dashboard, detections, frame_w)
@@ -643,13 +738,16 @@ while True:
 
     draw_text(
         dashboard,
-        "PRESS S TO SAVE SCREENSHOT  |  PRESS Q TO EXIT",
-        440,
+        "PRESS S = SCREENSHOT  |  PRESS V = RECORD VIDEO  |  PRESS Q = EXIT",
+        390,
         705,
         0.45,
         WHITE,
         1,
     )
+
+    if recording and video_writer is not None:
+        video_writer.write(dashboard)
 
     cv2.imshow("AI Driver Assistant Dashboard", dashboard)
 
@@ -658,10 +756,27 @@ while True:
     if key == ord("s"):
         save_dashboard_screenshot(dashboard)
 
+    if key == ord("v"):
+        if not recording:
+            video_writer, video_path = start_video_recording()
+
+            if video_writer is not None:
+                recording = True
+        else:
+            stop_video_recording(video_writer, video_path)
+            video_writer = None
+            video_path = None
+            recording = False
+
     if key == ord("q") or key == 27:
         break
 
+
+if video_writer is not None:
+    stop_video_recording(video_writer, video_path)
+
 cap.release()
 cv2.destroyAllWindows()
+
 
 

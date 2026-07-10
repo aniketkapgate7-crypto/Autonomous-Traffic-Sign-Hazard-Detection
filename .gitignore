@@ -221,3 +221,6 @@ dataset/processed/
 .DS_Store
 Thumbs.db
 
+outputs/videos/
+outputs/screenshots/
+outputs/detection_log.csv
