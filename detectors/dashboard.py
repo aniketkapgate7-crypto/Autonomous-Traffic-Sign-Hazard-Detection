@@ -21,6 +21,16 @@ from detectors.distance_estimator import (
 from detectors.object_tracker import ObjectTracker
 from config import MAX_DISTANCE
 
+try:
+    from alerts.voice_warning import speak_warning
+except ImportError:
+    def speak_warning(message, cooldown=6):
+        pass
+
+
+# ==============================
+# Model and camera
+# ==============================
 
 model = YOLO("yolov8n.pt")
 cap = cv2.VideoCapture(0)
@@ -35,6 +45,10 @@ SCREEN_H = 720
 prev_time = time.time()
 scan_angle = 0
 
+
+# ==============================
+# HUD layout
+# ==============================
 
 TOP_X1, TOP_Y1, TOP_X2, TOP_Y2 = 25, 20, 1255, 90
 
@@ -60,6 +74,10 @@ ENV_Y = 535
 ENV_H = 150
 
 
+# ==============================
+# Colors - BGR
+# ==============================
+
 BG = (8, 14, 22)
 PANEL = (12, 22, 34)
 
@@ -77,6 +95,10 @@ ROAD = (50, 58, 68)
 ROAD_DARK = (28, 36, 46)
 LANE = (235, 245, 245)
 
+
+# ==============================
+# Basic drawing helpers
+# ==============================
 
 def draw_text(img, text, x, y, size=0.5, color=WHITE, thickness=1):
     cv2.putText(
@@ -170,6 +192,10 @@ def draw_background_grid(img):
         cv2.line(img, (0, y), (SCREEN_W, y), (15, 35, 45), 1)
 
 
+# ==============================
+# Risk and icon helpers
+# ==============================
+
 def get_color_by_risk(risk):
     if risk == "DANGER":
         return RED
@@ -222,6 +248,10 @@ def draw_car_icon(img, cx, cy, scale=1.0, color=WHITE):
     cv2.rectangle(img, (x2, y2 - 36), (x2 + 5, y2 - 16), color, -1)
 
 
+# ==============================
+# Top bar
+# ==============================
+
 def draw_top_bar(img, fps, inference_ms, nearest_name, nearest_distance, overall_risk):
     draw_panel(img, TOP_X1, TOP_Y1, TOP_X2, TOP_Y2, "", CYAN_BRIGHT)
 
@@ -245,6 +275,10 @@ def draw_top_bar(img, fps, inference_ms, nearest_name, nearest_distance, overall
     draw_text(img, f"TIME // {clock}", 1120, 65, 0.40, WHITE, 1)
 
 
+# ==============================
+# Camera panel
+# ==============================
+
 def draw_camera_panel(img, camera_view):
     x1 = CAM_X
     y1 = CAM_Y
@@ -261,6 +295,10 @@ def draw_camera_panel(img, camera_view):
     resized = cv2.resize(camera_view, (inner_x2 - inner_x1, inner_y2 - inner_y1))
     img[inner_y1:inner_y2, inner_x1:inner_x2] = resized
 
+
+# ==============================
+# Tracked objects panel
+# ==============================
 
 def draw_tracked_objects_panel(img, detections):
     x1 = TELEM_X
@@ -304,6 +342,10 @@ def draw_tracked_objects_panel(img, detections):
 
         y += 28
 
+
+# ==============================
+# Road model
+# ==============================
 
 def map_detection_to_world(det, frame_w, center_x, road_top_y, road_bottom_y, ego_y):
     distance = det["distance"]
@@ -415,6 +457,10 @@ def draw_road_model_panel(img, detections, frame_w):
         draw_text(img, f"ID:{track_id}", obj_x - 18, obj_y + 48, 0.28, color, 1)
 
 
+# ==============================
+# Right panels
+# ==============================
+
 def draw_radar_panel(img, detections, frame_w, angle):
     x1 = SIDE_X
     y1 = RADAR_Y
@@ -502,6 +548,10 @@ def draw_environment_panel(img):
         draw_text(img, value, x2 - 70, y, 0.32, GREEN, 1)
         y += 32
 
+
+# ==============================
+# Main loop
+# ==============================
 
 while True:
     ret, frame = cap.read()
@@ -592,6 +642,12 @@ while True:
     if nearest_object is not None:
         nearest_name = nearest_object["name"]
         overall_risk = nearest_object["risk"]
+
+    if overall_risk == "DANGER" and nearest_name is not None:
+        speak_warning(
+            f"Warning. {nearest_name} detected ahead. Collision risk. Drive carefully.",
+            cooldown=6,
+        )
 
     dashboard = np.zeros((SCREEN_H, SCREEN_W, 3), dtype=np.uint8)
     dashboard[:] = BG
