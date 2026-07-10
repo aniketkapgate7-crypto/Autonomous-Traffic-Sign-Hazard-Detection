@@ -11,6 +11,13 @@ A computer vision based AI driver assistance prototype that detects road objects
 
 ![AI Driver Assistant Dashboard](docs/images/dashboard_demo.png)
 
+## Dashboard Controls
+
+```text
+S = Save dashboard screenshot
+V = Start / Stop dashboard video recording
+Q = Exit dashboard
+Esc = Exit dashboard
 ---
 
 ## Project Overview
