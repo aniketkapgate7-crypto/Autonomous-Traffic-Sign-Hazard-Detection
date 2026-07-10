@@ -28,10 +28,6 @@ except ImportError:
         pass
 
 
-# ==============================
-# Model and camera
-# ==============================
-
 model = YOLO("yolov8n.pt")
 cap = cv2.VideoCapture(0)
 tracker = ObjectTracker()
@@ -45,10 +41,6 @@ SCREEN_H = 720
 prev_time = time.time()
 scan_angle = 0
 
-
-# ==============================
-# HUD layout
-# ==============================
 
 TOP_X1, TOP_Y1, TOP_X2, TOP_Y2 = 25, 20, 1255, 90
 
@@ -74,10 +66,6 @@ ENV_Y = 535
 ENV_H = 150
 
 
-# ==============================
-# Colors - BGR
-# ==============================
-
 BG = (8, 14, 22)
 PANEL = (12, 22, 34)
 
@@ -95,10 +83,6 @@ ROAD = (50, 58, 68)
 ROAD_DARK = (28, 36, 46)
 LANE = (235, 245, 245)
 
-
-# ==============================
-# Basic drawing helpers
-# ==============================
 
 def draw_text(img, text, x, y, size=0.5, color=WHITE, thickness=1):
     cv2.putText(
@@ -124,6 +108,7 @@ def draw_glow_text(img, text, x, y, size=0.6, color=CYAN_BRIGHT, thickness=1):
         thickness + 3,
         cv2.LINE_AA,
     )
+
     cv2.putText(
         img,
         text,
@@ -192,10 +177,6 @@ def draw_background_grid(img):
         cv2.line(img, (0, y), (SCREEN_W, y), (15, 35, 45), 1)
 
 
-# ==============================
-# Risk and icon helpers
-# ==============================
-
 def get_color_by_risk(risk):
     if risk == "DANGER":
         return RED
@@ -203,6 +184,7 @@ def get_color_by_risk(risk):
         return YELLOW
     if risk == "SAFE":
         return GREEN
+
     return CYAN_BRIGHT
 
 
@@ -248,10 +230,6 @@ def draw_car_icon(img, cx, cy, scale=1.0, color=WHITE):
     cv2.rectangle(img, (x2, y2 - 36), (x2 + 5, y2 - 16), color, -1)
 
 
-# ==============================
-# Top bar
-# ==============================
-
 def draw_top_bar(img, fps, inference_ms, nearest_name, nearest_distance, overall_risk):
     draw_panel(img, TOP_X1, TOP_Y1, TOP_X2, TOP_Y2, "", CYAN_BRIGHT)
 
@@ -261,6 +239,7 @@ def draw_top_bar(img, fps, inference_ms, nearest_name, nearest_distance, overall
     draw_text(img, f"AI INFERENCE: {inference_ms:.1f}ms", 505, 70, 0.38, CYAN_BRIGHT, 1)
 
     risk_color = get_color_by_risk(overall_risk)
+
     draw_panel(img, 760, 38, 905, 68, "", risk_color)
     draw_text(img, f"ALERT: {overall_risk}", 776, 59, 0.45, risk_color, 2)
 
@@ -274,10 +253,6 @@ def draw_top_bar(img, fps, inference_ms, nearest_name, nearest_distance, overall
     clock = datetime.now().strftime("%H:%M:%S")
     draw_text(img, f"TIME // {clock}", 1120, 65, 0.40, WHITE, 1)
 
-
-# ==============================
-# Camera panel
-# ==============================
 
 def draw_camera_panel(img, camera_view):
     x1 = CAM_X
@@ -295,10 +270,6 @@ def draw_camera_panel(img, camera_view):
     resized = cv2.resize(camera_view, (inner_x2 - inner_x1, inner_y2 - inner_y1))
     img[inner_y1:inner_y2, inner_x1:inner_x2] = resized
 
-
-# ==============================
-# Tracked objects panel
-# ==============================
 
 def draw_tracked_objects_panel(img, detections):
     x1 = TELEM_X
@@ -343,10 +314,6 @@ def draw_tracked_objects_panel(img, detections):
         y += 28
 
 
-# ==============================
-# Road model
-# ==============================
-
 def map_detection_to_world(det, frame_w, center_x, road_top_y, road_bottom_y, ego_y):
     distance = det["distance"]
 
@@ -365,7 +332,12 @@ def map_detection_to_world(det, frame_w, center_x, road_top_y, road_bottom_y, eg
     obj_y = max(road_top_y + 55, min(ego_y - 85, obj_y))
 
     t = (obj_y - road_top_y) / (road_bottom_y - road_top_y)
-    road_half_width = int(70 + t * 170)
+
+    if road_bottom_y == road_top_y:
+        road_half_width = 120
+    else:
+        road_half_width = int(70 + t * 170)
+
     obj_x = int(center_x + norm_x * road_half_width * 0.75)
 
     return obj_x, obj_y
@@ -457,10 +429,6 @@ def draw_road_model_panel(img, detections, frame_w):
         draw_text(img, f"ID:{track_id}", obj_x - 18, obj_y + 48, 0.28, color, 1)
 
 
-# ==============================
-# Right panels
-# ==============================
-
 def draw_radar_panel(img, detections, frame_w, angle):
     x1 = SIDE_X
     y1 = RADAR_Y
@@ -524,6 +492,7 @@ def draw_sys_tracker(img):
     for label, value in items:
         draw_text(img, label, x1 + 15, y, 0.30, WHITE, 1)
         draw_text(img, value, x2 - 70, y, 0.30, GREEN, 1)
+
         y += 30
 
 
@@ -546,12 +515,19 @@ def draw_environment_panel(img):
     for label, value in items:
         draw_text(img, label, x1 + 15, y, 0.32, WHITE, 1)
         draw_text(img, value, x2 - 70, y, 0.32, GREEN, 1)
+
         y += 32
 
 
-# ==============================
-# Main loop
-# ==============================
+def save_dashboard_screenshot(dashboard):
+    os.makedirs("outputs/screenshots", exist_ok=True)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    file_path = f"outputs/screenshots/dashboard_{timestamp}.png"
+
+    cv2.imwrite(file_path, dashboard)
+    print(f"Screenshot saved: {file_path}")
+
 
 while True:
     ret, frame = cap.read()
@@ -665,13 +641,27 @@ while True:
     draw_sys_tracker(dashboard)
     draw_environment_panel(dashboard)
 
+    draw_text(
+        dashboard,
+        "PRESS S TO SAVE SCREENSHOT  |  PRESS Q TO EXIT",
+        440,
+        705,
+        0.45,
+        WHITE,
+        1,
+    )
+
     cv2.imshow("AI Driver Assistant Dashboard", dashboard)
 
     key = cv2.waitKey(1) & 0xFF
+
+    if key == ord("s"):
+        save_dashboard_screenshot(dashboard)
 
     if key == ord("q") or key == 27:
         break
 
 cap.release()
 cv2.destroyAllWindows()
+
 
